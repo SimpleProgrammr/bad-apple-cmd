@@ -10,7 +10,6 @@ import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
-import java.util.Timer;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
@@ -18,55 +17,139 @@ import java.util.stream.Stream;
 
 
 public class Main {
-    private static final char[] chars = {
-            ' ', '.', ',', ':', '-', '~', '=', '+',
-            '*', '#', '%', '@'
+    private static final String[] CHARS = {
+            "  ", "..", ",,", "::", "--", "~~", "==", "++",
+            "**", "##", "%%", "@@"
     };
-    public static int scale = 5;
+    public static int SCALE = 5;
+    private static boolean REVERSE = false;
+    private static final String VERSION = "0.1a";
+    private static String FRAMES_DIRECTORY = ".\\bad-apple\\image_sequence";
+    private static String FRAME_PATH;
+    private static String MUSIC_FILE_PATH = ".\\bad-apple\\bad_apple.wav";
+    private static boolean PLAY_MUSIC = false;
+    private static boolean ONE_FRAME_MODE = false;
+    private static int FRAME_TIME = 32;
+
+
     public static void main(String[] args) {
 
-        if(args.length > 0)
-            scale = Integer.parseInt(args[0]);
+        for (var arg : args) {
+            if (arg.equals("-h") || arg.equals("-help")) {
+                System.out.println(
+                        """
+                                Help for: bad-apple-cmd
+                                -h\t--help\t\t|\tPrints help
+                                -v\t--version\t|\tPrints version
+                                -s=\t--scale=\t\t|\tSets the scale parameter interpreted as % => -s=<value> && --scale=<value>
+                                   \t        \t\t \t[Default: 5] [WARNING] High RAM consumption. -Xmx might be needed\s
+                                -r\t--reverse\t|\tInverts black and white [Default: false]
+                                -i=\t-input=\t|\tSets different directory for input frames files [Default: .\\bad-apple\\image_sequence]
+                                -m\t-music\t|\tTurns on the music [Default: false]
+                                -mp=\t-mpath=\t|\tSets music file path [Default: .\\bad-apple\\bad_apple.wav]
+                                -f=\t-fps=\t|\tSets framerate target[Default: 30 fps] [WARNING: More may not my possible. CMD and CPU limitations]
+                                   \t     \t \tTo get higher fps limit decrease reduce scale
+                        """);
+                return;
+            } else if (arg.equals("-v") || arg.equals("-version")) {
+                System.out.println("Program version is: " + VERSION);
+                return;
+            } else if (arg.contains("-s=") || arg.contains("-scale=")) {
+                if (arg.contains("-s="))
+                    SCALE = Integer.parseInt(arg.replace("-s=", ""));
+                else
+                    SCALE = Integer.parseInt(arg.replace("--scale=", ""));
+            } else if (arg.equals("-r") || arg.equals("-reverse")) {
+                REVERSE = true;
+            } else if (arg.equals("-i=") || arg.equals("-input=")) {
+                try {
+                    Path arg_path = Paths.get(arg);
+                    if (Files.isDirectory(arg_path)) {
+                        FRAMES_DIRECTORY = arg;
+                    } else if (Files.isRegularFile(arg_path)) {
+                        ONE_FRAME_MODE = true;
+                        FRAME_PATH = arg;
+                    } else {
+                        System.out.println("File not found: " + arg);
+                        return;
+                    }
+                } catch (Exception e) {
+                    System.out.println("File path ERROR");
+                    System.out.println(e.getMessage());
+
+                }
+            } else if (arg.equals("-m") || arg.equals("-music")) {
+                PLAY_MUSIC = true;
+            } else if (arg.contains("-mp=") || arg.contains("-mpath=")) {
+                if (arg.contains("-mp="))
+                    MUSIC_FILE_PATH = arg.replace("-mp=", "");
+                else
+                    MUSIC_FILE_PATH = arg.replace("-mpath=", "");
+            }
+            else if (arg.contains("-f=") || arg.contains("-fps=")) {
+                if (arg.contains("-f="))
+                    FRAME_TIME = 1000/Integer.parseInt(arg.replace("-f=", ""));
+                else
+                    FRAME_TIME = 1000/Integer.parseInt(arg.replace("-fps=", ""));
+                FRAME_TIME = (FRAME_TIME -1);
+            }
+        }
 
 
-        String dir = ".\\bad-apple\\image_sequence";
         try {
-            ArrayList<String> frames = new ArrayList<>(GetFilesInDirList(dir));
-            frames.sort(null);
+            ArrayList<String> frames = new ArrayList<>();
+            if (ONE_FRAME_MODE) {
+                frames.add(FRAME_PATH);
+            } else {
+                frames.addAll(GetFilesInDirList(FRAMES_DIRECTORY));
+                frames.sort(null);
+            }
 
             int framesCount = frames.size();
-
-
-            List<BufferedImage> readyToConversionImages = new ArrayList<>(Collections.nCopies(frames.size(), null));
+            List<BufferedImage> readyToConversionImages = new ArrayList<>(Collections.nCopies(framesCount, null));
             AtomicInteger readyCount = new AtomicInteger();
 
-            IntStream.range(0, frames.size()).parallel().forEach(i -> {
-                String f = frames.get(i);
-                BufferedImage image = null;
+            if (SCALE == 100) {
+                IntStream.range(0, framesCount).parallel().forEach(i -> {
+                    String f = frames.get(i);
+                    BufferedImage image;
+                    try {
+                        image = ImageIO.read(new File(FRAMES_DIRECTORY + "\\" + f));
+                    } catch (IOException e) {
+                        throw new RuntimeException(e);
+                    }
+                    readyToConversionImages.set(i, image);
+                    System.out.print("\rReady images:  " + readyCount.incrementAndGet() + " / " + framesCount + " ...");
+                });
+            } else {
+                IntStream.range(0, framesCount).parallel().forEach(i -> {
+                    String f = frames.get(i);
+                    BufferedImage image;
 
-                try {
-                    image = ImageIO.read(new File(dir + "\\" + f));
-                } catch (IOException e) {
-                    throw new RuntimeException(e);
-                }
+                    try {
+                        image = ImageIO.read(new File(FRAMES_DIRECTORY + "\\" + f));
+                    } catch (IOException e) {
+                        throw new RuntimeException(e);
+                    }
 
-                int w = image.getWidth();
-                int h = image.getHeight();
+                    int w = image.getWidth();
+                    int h = image.getHeight();
 
 
-                int width = w * scale / 100;
-                int height = h * scale / 100;
+                    int width = w * SCALE / 100;
+                    int height = h * SCALE / 100;
 
-                BufferedImage resized = getResizedBufferedImage(image, width, height);
+                    BufferedImage resized = getResizedBufferedImage(image, width, height);
 
-                readyToConversionImages.set(i, resized);  // <-- zachowanie kolejności
+                    readyToConversionImages.set(i, resized);  // <-- zachowanie kolejności
 
-                int count = readyCount.incrementAndGet();
-                System.out.print("\rReady images:  " + count + " / " + frames.size() + " ...");
-            });
+                    System.out.print("\rReady images:  " + readyCount.incrementAndGet() + " / " + framesCount + " ...");
+                });
+            }
 
-            if(scale>=10)
-                playMusic(".\\bad-apple\\bad_apple.wav");
+
+            if (PLAY_MUSIC)
+                playMusic(MUSIC_FILE_PATH);
 
             long timer_stop, timer_start;
             AtomicInteger counter = new AtomicInteger();
@@ -77,19 +160,18 @@ public class Main {
                 int width = image.getWidth();
                 int height = image.getHeight();
 
-                char[][] outCharsFrame = new char[height][width];
+                String[][] outCharsFrame = new String[height][width];
 
-                IntStream.range(0, width).parallel().forEach(x -> {
-                    IntStream.range(0, height).parallel().forEach(y -> {
-                        var pixel = image.getRGB(x, y);
+                IntStream.range(0, width).parallel().forEach(x ->
+                        IntStream.range(0, height).parallel().forEach(y -> {
+                    var pixel = image.getRGB(x, y);
 
-                        outCharsFrame[y][x] = getPixelToChar(pixel);
-                    });
-                });
+                    outCharsFrame[y][x] = getPixelToChar(pixel);
+                }));
                 String[] outLinesFrame = new String[height];
                 IntStream.range(0, height).parallel().forEach(y -> {
 
-                    for (char c : outCharsFrame[y]) {
+                    for (String c : outCharsFrame[y]) {
                         outLinesFrame[y] += c;
                     }
                 });
@@ -99,36 +181,31 @@ public class Main {
                 }
 
 
-
                 timer_stop = System.nanoTime();
-                long time_lap = (32 - (timer_stop - timer_start) / 1_000_000);
-                Thread.sleep(Math.max(0, time_lap ), (int) (timer_stop%1_000_000));
+                long time_lap = (FRAME_TIME - (timer_stop - timer_start) / 1_000_000);
+                Thread.sleep(Math.max(0, time_lap), (int) (timer_stop % 1_000_000));
                 System.out.println(counter.incrementAndGet());
 
             }
 
+        } catch (Exception e) {
+            System.out.println("Error in toChar conversion!");
+            System.out.println("Error: " + e.getMessage());
         }
-        catch(Exception e)
-        {
-            e.printStackTrace();
-        }
-        return;
     }
 
-    private static char getPixelToChar(int pixel)
-    {
+    private static String getPixelToChar(int pixel) {
         var R = pixel >> 16 & 0xFF;
         var G = pixel >> 8 & 0xFF;
         var B = pixel & 0xFF;
         var avgColor = (R + G + B) / 3;
 
-        int opacitySpace = 255/chars.length;
-        int index = Math.min(chars.length-1, Math.max(0,avgColor/opacitySpace));
-        return chars[index];
+        int opacitySpace = 255 / CHARS.length;
+        int index = Math.min(CHARS.length - 1, Math.max(0, avgColor / opacitySpace));
+        return REVERSE ? CHARS[CHARS.length - 1 - index] : CHARS[index];
     }
 
-    private static void playMusic(String musicPath)
-    {
+    private static void playMusic(String musicPath) {
         new Thread(() -> {
             try {
                 File muzyka = new File(musicPath); // Plik musi być w katalogu projektu
@@ -138,7 +215,16 @@ public class Main {
                 clip.loop(Clip.LOOP_CONTINUOUSLY); // Pętla w tle
                 clip.start();
             } catch (UnsupportedAudioFileException | IOException | LineUnavailableException e) {
-                e.printStackTrace();
+                if(e.getCause() instanceof UnsupportedAudioFileException) {
+                    System.out.println("UnsupportedAudioFileException: " + e.getCause().getMessage());
+                }
+                else if (e.getCause() instanceof LineUnavailableException) {
+                    System.out.println("LineUnavailableException: " + e.getCause().getMessage());
+                }
+                else {
+                    System.out.println("IOException: " + e.getCause().getMessage());
+                }
+
             }
         }).start();
     }
@@ -181,7 +267,8 @@ public class Main {
             }
 
         } catch (IOException | InterruptedException e) {
-            e.printStackTrace();
+            System.out.println("CLEAR CONSOLE ERROR!");
+            System.out.println("Error: " + e.getMessage());
         }
     }
 
